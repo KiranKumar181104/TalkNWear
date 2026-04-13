@@ -6,12 +6,18 @@ import requests
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from pydantic import BaseModel
+from gtts import gTTS
+import uuid
 
 load_dotenv()
 
 DEEPGRAM_API_KEY = os.getenv('DEEPGRAM_API_KEY')
 DEEPGRAM_URL = 'https://api.deepgram.com/v1/listen?language=en'
+
+TEMP_AUDIO_DIR = "temp_audio"
+os.makedirs(TEMP_AUDIO_DIR, exist_ok=True)
 
 app = FastAPI(
     title="Speech-to-Text & Translation API",
@@ -54,6 +60,11 @@ class AudioRequest(BaseModel):
 class TranslateRequest(BaseModel):
     text: str
     targetLanguage: str
+
+
+class TTSRequest(BaseModel):
+    text: str
+    language: str = "en"
 
 
 @app.post("/speech-to-text")
@@ -130,8 +141,34 @@ async def translate(request: TranslateRequest):
 async def health_check():
     return {"status": "Server is running"}
 
+@app.get("/")
+async def root():
+    return RedirectResponse(url="/docs")
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return Response(status_code=204)
+
+
+@app.post("/text-to-speech")
+async def text_to_speech(request: TTSRequest):
+    if not request.text or request.text.strip() == "":
+        raise HTTPException(status_code=400, detail="Text cannot be empty")
+
+    try:
+        tts = gTTS(text=request.text, lang=request.language or "en")
+        
+        file_name = f"tts_{uuid.uuid4().hex}.mp3"
+        file_path = os.path.join(TEMP_AUDIO_DIR, file_name)
+        
+        tts.save(file_path)
+        
+        return FileResponse(file_path, media_type="audio/mpeg", filename=file_name)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(e)}")
+
 
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=5000)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
