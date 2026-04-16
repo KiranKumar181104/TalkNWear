@@ -8,10 +8,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-load_dotenv()
+from ai_module.stt import speech_to_text_bytes
 
-DEEPGRAM_API_KEY = os.getenv('DEEPGRAM_API_KEY')
-DEEPGRAM_URL = 'https://api.deepgram.com/v1/listen?language=en'
+load_dotenv()
 
 app = FastAPI(
     title="Speech-to-Text & Translation API",
@@ -60,49 +59,21 @@ class TranslateRequest(BaseModel):
 async def speech_to_text(request: AudioRequest):
     if not request.audio:
         raise HTTPException(status_code=400, detail="No audio data provided")
-
-    if not DEEPGRAM_API_KEY:
-        raise HTTPException(status_code=500, detail="Deepgram API key is not configured")
-
+    
     try:
         audio_data = request.audio
         if audio_data.startswith("data:"):
             audio_data = audio_data.split(",", 1)[1]
         audio_bytes = base64.b64decode(audio_data)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid audio payload")
 
-    headers = {
-        "Authorization": f"Token {DEEPGRAM_API_KEY}",
-        "Content-Type": "audio/wav",
-    }
+        result = speech_to_text_bytes(audio_bytes, primary_lang="hi")
+        if not result["success"]:
+            raise HTTPException(status_code=502, detail=result["error"])
+            
+        return result
 
-    response = requests.post(DEEPGRAM_URL, headers=headers, data=audio_bytes, timeout=20)
-    if not response.ok:
-        detail = f"Deepgram request failed with status {response.status_code}"
-        try:
-            detail = response.json().get("error", detail)
-        except Exception:
-            pass
-        raise HTTPException(status_code=502, detail=detail)
-
-    try:
-        result = response.json()
-        alternative = result["results"]["channels"][0]["alternatives"][0]
-        transcript = alternative.get("transcript", "")
-        confidence = alternative.get("confidence", 0.0)
-    except Exception:
-        raise HTTPException(status_code=502, detail="Unable to parse Deepgram response")
-
-    if not transcript:
-        raise HTTPException(status_code=502, detail="Deepgram returned no transcript")
-
-    return {
-        "success": True,
-        "text": transcript,
-        "confidence": confidence,
-        "language": "en",
-    }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error: {str(e)}")
 
 
 @app.post("/translate")
@@ -133,5 +104,9 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-
-    uvicorn.run(app, host="0.0.0.0", port=5000)
+    from ai_module.stt.config import verify_config
+    
+    if verify_config():
+        uvicorn.run(app, host="0.0.0.0", port=5000)
+    else:
+        print("Aborting startup: Missing configuration.")

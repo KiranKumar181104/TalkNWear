@@ -3,12 +3,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "")
-
 def verify_config():
-    """Checks if the key path is actually set."""
-    path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-    if not path or not os.path.exists(path):
-        print(f"❌ ERROR: Google Key not found at: {path}")
+    api_key = os.getenv("DEEPGRAM_API_KEY")
+    
+    if not api_key:
+        print("❌ ERROR: DEEPGRAM_API_KEY not found in .env file")
         return False
+        
+    if len(api_key) < 10:
+        print("❌ ERROR: DEEPGRAM_API_KEY looks invalid or too short")
+        return False
+        
     return True
